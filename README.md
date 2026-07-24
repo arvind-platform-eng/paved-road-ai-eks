@@ -161,5 +161,3 @@ Contributions are welcome. Please open an issue first to discuss significant cha
 ---
 
 Built by [Arvind Kumar](https://github.com/arvind-platform-eng) — Lead Platform Engineer & SRE.
-
-Built by [Arvind Kumar](https://github.com/arvind-platform-eng) — Lead Platform Engineer & SRE.# paved-road-ai-eks
