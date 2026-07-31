@@ -1,0 +1,27 @@
+---
+# Root ArgoCD Application — bootstraps everything else via app-of-apps.
+# Apply this ONCE after ArgoCD is installed; it manages all downstream apps.
+#
+# kubectl apply -f apps/bootstrap/application.yaml
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/arvind-platform-eng/paved-road-ai-eks.git
+    targetRevision: main
+    path: apps/platform
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
