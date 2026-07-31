@@ -8,6 +8,8 @@
 ![Kubernetes](https://img.shields.io/badge/kubernetes-1.30+-blue)
 ![vLLM](https://img.shields.io/badge/vLLM-0.6+-green)
 
+> Status: Active development. See the Roadmap section for what's built vs. planned.
+
 ---
 
 ## Why this exists
@@ -27,7 +29,7 @@ This repo is that gap, closed. It's a working reference architecture that any en
 
 ## Architecture
 
-![Architecture diagram](docs/architecture.png)
+![Architecture diagram](docs/architecture.svg)
 
 The system has four layers:
 
@@ -55,6 +57,8 @@ cd paved-road-ai-eks
 
 # Provision the EKS cluster (~15 min)
 cd terraform/envs/dev
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your values
 terraform init
 terraform apply
 
@@ -89,6 +93,8 @@ The interesting choices behind this architecture — trade-offs, not defaults.
 - **Why an ApplicationSet, not individual ArgoCD Applications** — one YAML defines all environment variants (dev/staging/prod). Reduces GitOps drift, single source of truth.
 - **Why the model comes from S3 at startup, not baked into the container** — model weights are 4–14GB. Baking them into images makes them slow to build, slow to pull, and impossible to swap without a redeploy. S3 storage-initializer is the standard KServe pattern.
 
+Full rationale for each choice lives in [docs/ADRs/](docs/ADRs/).
+
 ## Repository structure
 
 ```
@@ -111,7 +117,7 @@ The interesting choices behind this architecture — trade-offs, not defaults.
 ├── charts/                  # Custom Helm charts
 ├── scripts/                 # Utility scripts (load testing, model download)
 ├── docs/
-│   ├── architecture.png
+│   ├── architecture.svg
 │   ├── cost-analysis.md    # Detailed cost breakdown
 │   ├── runbook.md          # Operational runbook
 │   └── ADRs/               # Architecture Decision Records
