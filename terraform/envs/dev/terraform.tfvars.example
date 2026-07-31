@@ -1,0 +1,7 @@
+# Copy this file to terraform.tfvars and fill in real values.
+# terraform.tfvars is gitignored — never commit real secrets.
+
+aws_region             = "us-east-1"
+availability_zones     = ["us-east-1a", "us-east-1b"]
+kubernetes_version     = "1.30"
+grafana_admin_password = "changeme-use-a-strong-password"
