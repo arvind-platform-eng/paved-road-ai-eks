@@ -64,10 +64,10 @@ def read_field(label: str, hint: str) -> str:
     Stops reading when the user enters an empty line.
     Returns the joined lines (or empty string if skipped).
     """
-    print(file=sys.stderr)
-    print(f"{BOLD}{label}{RESET} {DIM}{hint}{RESET}", file=sys.stderr)
+    print(file=sys.stderr, flush=True)
+    print(f"{BOLD}{label}{RESET} {DIM}{hint}{RESET}", file=sys.stderr, flush=True)
     print(f"{DIM}(one or more lines; press Enter on an empty line to finish){RESET}",
-          file=sys.stderr)
+          file=sys.stderr, flush=True)
 
     lines = []
     while True:
@@ -83,10 +83,10 @@ def read_field(label: str, hint: str) -> str:
 
 def read_title() -> str:
     """Read a single-line title. Required."""
-    print(file=sys.stderr)
+    print(file=sys.stderr, flush=True)
     print(f"{BOLD}Short title{RESET} "
           f"{DIM}(e.g. 'Karpenter GPU node stuck in Pending'){RESET}",
-          file=sys.stderr)
+          file=sys.stderr, flush=True)
     try:
         title = input().strip()
     except EOFError:
@@ -179,24 +179,24 @@ def main() -> int:
 
     # Sanity check
     if not journal_path.is_file():
-        print(f"{YELLOW}Journal not found at: {journal_path}{RESET}", file=sys.stderr)
+        print(f"{YELLOW}Journal not found at: {journal_path}{RESET}", file=sys.stderr, flush=True)
         print(f"Run from your repo root, or pass --file /path/to/JOURNAL.md",
-              file=sys.stderr)
+              file=sys.stderr, flush=True)
         return 1
 
     # Header
-    print(file=sys.stderr)
-    print(f"{BOLD}==================================={RESET}", file=sys.stderr)
-    print(f"{BOLD}  Log a debug entry to {journal_path.name}{RESET}", file=sys.stderr)
-    print(f"{BOLD}==================================={RESET}", file=sys.stderr)
+    print(file=sys.stderr, flush=True)
+    print(f"{BOLD}==================================={RESET}", file=sys.stderr, flush=True)
+    print(f"{BOLD}  Log a debug entry to {journal_path.name}{RESET}", file=sys.stderr, flush=True)
+    print(f"{BOLD}==================================={RESET}", file=sys.stderr, flush=True)
     print(f"{DIM}Type your answer; press Enter on an empty line to move on.{RESET}",
-          file=sys.stderr)
-    print(f"{DIM}Leave any field blank to skip it.{RESET}", file=sys.stderr)
+          file=sys.stderr, flush=True)
+    print(f"{DIM}Leave any field blank to skip it.{RESET}", file=sys.stderr, flush=True)
 
     # Title (required)
     title = read_title()
     if not title:
-        print(f"{YELLOW}Title is required. Aborting.{RESET}", file=sys.stderr)
+        print(f"{YELLOW}Title is required. Aborting.{RESET}", file=sys.stderr, flush=True)
         return 1
 
     # The five fields
@@ -210,7 +210,7 @@ def main() -> int:
             "lesson":     read_field("Lesson",       "What will you do differently next time?"),
         }
     except KeyboardInterrupt:
-        print(f"\n{YELLOW}Cancelled. No entry saved.{RESET}", file=sys.stderr)
+        print(f"\n{YELLOW}Cancelled. No entry saved.{RESET}", file=sys.stderr, flush=True)
         return 1
 
     # Build and insert
@@ -218,17 +218,17 @@ def main() -> int:
     try:
         insert_entry(journal_path, entry)
     except Exception as e:
-        print(f"{RED}Failed to write journal: {e}{RESET}", file=sys.stderr)
+        print(f"{RED}Failed to write journal: {e}{RESET}", file=sys.stderr, flush=True)
         return 1
 
-    # Confirmation
-    print(file=sys.stderr)
-    print(f"{GREEN}Entry saved to {journal_path}{RESET}", file=sys.stderr)
-    print(file=sys.stderr)
-    print(f"{DIM}Next step (copy-paste this to commit):{RESET}", file=sys.stderr)
-    print(f"  git add {journal_path}", file=sys.stderr)
-    print(f'  git commit -m "docs(journal): {title}"', file=sys.stderr)
-    print(file=sys.stderr)
+    # Confirmation — use stdout so it's guaranteed visible
+    print(flush=True)
+    print(f"{GREEN}Entry saved to {journal_path}{RESET}", flush=True)
+    print(flush=True)
+    print(f"{DIM}Next step (copy-paste this to commit):{RESET}", flush=True)
+    print(f"  git add {journal_path}", flush=True)
+    print(f'  git commit -m "docs(journal): {title}"', flush=True)
+    print(flush=True)
 
     return 0
 
