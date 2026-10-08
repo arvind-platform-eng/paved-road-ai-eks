@@ -23,8 +23,9 @@ resource "helm_release" "kube_prometheus_stack" {
   version          = var.prometheus_stack_version
   namespace        = "monitoring"
   create_namespace = true
+  timeout          = 900
 
-    values = [
+  values = [
     yamlencode({
       # Tolerate the system taint so Prometheus can run on system nodes
       # when no workload nodes exist (fresh cluster scenario)
@@ -112,6 +113,12 @@ resource "helm_release" "kube_prometheus_stack" {
           operator = "Exists"
         }]
       }
+
+      prometheus-node-exporter = {
+        tolerations = [{
+          operator = "Exists"
+        }]
+      }
     })
   ]
 }
@@ -121,11 +128,11 @@ resource "helm_release" "kube_prometheus_stack" {
 # Deployed as DaemonSet on GPU nodes only.
 # -----------------------------------------------------------------------------
 resource "helm_release" "dcgm_exporter" {
-  name             = "dcgm-exporter"
-  repository       = "https://nvidia.github.io/dcgm-exporter/helm-charts"
-  chart            = "dcgm-exporter"
-  version          = var.dcgm_exporter_version
-  namespace        = "monitoring"
+  name       = "dcgm-exporter"
+  repository = "https://nvidia.github.io/dcgm-exporter/helm-charts"
+  chart      = "dcgm-exporter"
+  version    = var.dcgm_exporter_version
+  namespace  = "monitoring"
 
   values = [
     yamlencode({
