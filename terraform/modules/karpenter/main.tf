@@ -88,8 +88,8 @@ resource "aws_iam_policy" "karpenter_controller" {
         Resource = "*"
       },
       {
-        Effect = "Allow"
-        Action = ["sqs:DeleteMessage", "sqs:GetQueueUrl", "sqs:ReceiveMessage"]
+        Effect   = "Allow"
+        Action   = ["sqs:DeleteMessage", "sqs:GetQueueUrl", "sqs:ReceiveMessage"]
         Resource = aws_sqs_queue.karpenter_interruption.arn
       }
     ]

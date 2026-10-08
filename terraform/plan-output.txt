@@ -1,0 +1,10 @@
+var.grafana_admin_password
+  Grafana admin password — set in terraform.tfvars, never commit
+
+  Enter a value: 
+
+
+Interrupt received.
+Please wait for Terraform to exit or data loss may occur.
+Gracefully shutting down...
+
