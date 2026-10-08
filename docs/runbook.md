@@ -123,3 +123,20 @@ argocd app diff platform
 ## Post-incident review template
 
 Every incident with >5 min of user impact gets a post-incident review. See `docs/templates/postmortem.md` (todo).
+
+## Deployment sequence (fresh cluster)
+
+1. `cd terraform/envs/dev`
+2. `terraform init`
+3. `terraform apply -target=module.eks` (phase 1: cluster only, ~15 min)
+4. `terraform apply` (phase 2: Karpenter + observability, ~10 min)
+5. `./scripts/bootstrap-storage.sh` (sets default gp3 StorageClass)
+6. `kubectl get pods -A` (verify all Running)
+
+Total time: ~30 minutes from clean slate.
+
+## Teardown
+
+1. `cd terraform/envs/dev`
+2. `terraform destroy`
+3. Verify: `aws eks describe-cluster --name paved-road-ai-dev --region us-east-1` returns "not found"
