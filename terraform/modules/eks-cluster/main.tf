@@ -70,7 +70,7 @@ module "eks" {
   enable_irsa                              = true
   enable_cluster_creator_admin_permissions = true
 
-  cluster_addons = {
+      cluster_addons = {
     coredns = {
       most_recent = true
     }
@@ -82,6 +82,10 @@ module "eks" {
     }
     eks-pod-identity-agent = {
       most_recent = true
+    }
+    aws-ebs-csi-driver = {
+      most_recent              = true
+      service_account_role_arn = aws_iam_role.ebs_csi.arn
     }
   }
 
@@ -114,4 +118,41 @@ module "eks" {
   }
 
   tags = local.common_tags
+}
+
+# -----------------------------------------------------------------------------
+# IAM role for EBS CSI driver (IRSA)
+# Required for Prometheus/Grafana/Alertmanager persistent storage.
+# Without this, PVCs stay Pending forever and Helm installs time out.
+# -----------------------------------------------------------------------------
+data "aws_iam_policy_document" "ebs_csi_assume" {
+  statement {
+    effect  = "Allow"
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    principals {
+      type        = "Federated"
+      identifiers = [module.eks.oidc_provider_arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(module.eks.cluster_oidc_issuer_url, "https://", "")}:sub"
+      values   = ["system:serviceaccount:kube-system:ebs-csi-controller-sa"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "${replace(module.eks.cluster_oidc_issuer_url, "https://", "")}:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "ebs_csi" {
+  name               = "${var.cluster_name}-ebs-csi"
+  assume_role_policy = data.aws_iam_policy_document.ebs_csi_assume.json
+  tags               = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "ebs_csi" {
+  role       = aws_iam_role.ebs_csi.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }

@@ -13,7 +13,7 @@ variable "availability_zones" {
 variable "kubernetes_version" {
   description = "Kubernetes version"
   type        = string
-  default     = "1.30"
+  default     = "1.35"
 }
 
 variable "grafana_admin_password" {

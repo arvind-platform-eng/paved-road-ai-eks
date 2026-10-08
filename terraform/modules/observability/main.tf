@@ -24,29 +24,21 @@ resource "helm_release" "kube_prometheus_stack" {
   namespace        = "monitoring"
   create_namespace = true
 
-  values = [
+    values = [
     yamlencode({
+      # Tolerate the system taint so Prometheus can run on system nodes
+      # when no workload nodes exist (fresh cluster scenario)
       grafana = {
         adminPassword = var.grafana_admin_password
         persistence = {
           enabled = true
           size    = "10Gi"
         }
-        # Preload useful dashboards for GPU + vLLM
-        dashboardProviders = {
-          "dashboardproviders.yaml" = {
-            apiVersion = 1
-            providers = [{
-              name            = "default"
-              orgId           = 1
-              folder          = ""
-              type            = "file"
-              disableDeletion = false
-              editable        = true
-              options = { path = "/var/lib/grafana/dashboards/default" }
-            }]
-          }
-        }
+        tolerations = [{
+          key      = "CriticalAddonsOnly"
+          operator = "Exists"
+          effect   = "NoSchedule"
+        }]
       }
 
       prometheus = {
@@ -56,13 +48,17 @@ resource "helm_release" "kube_prometheus_stack" {
             volumeClaimTemplate = {
               spec = {
                 accessModes = ["ReadWriteOnce"]
-                resources = { requests = { storage = "50Gi" } }
+                resources   = { requests = { storage = "50Gi" } }
               }
             }
           }
-          # Scrape all ServiceMonitors in the cluster, not just our namespace
           serviceMonitorSelectorNilUsesHelmValues = false
           podMonitorSelectorNilUsesHelmValues     = false
+          tolerations = [{
+            key      = "CriticalAddonsOnly"
+            operator = "Exists"
+            effect   = "NoSchedule"
+          }]
         }
       }
 
@@ -72,11 +68,49 @@ resource "helm_release" "kube_prometheus_stack" {
             volumeClaimTemplate = {
               spec = {
                 accessModes = ["ReadWriteOnce"]
-                resources = { requests = { storage = "5Gi" } }
+                resources   = { requests = { storage = "5Gi" } }
               }
             }
           }
+          tolerations = [{
+            key      = "CriticalAddonsOnly"
+            operator = "Exists"
+            effect   = "NoSchedule"
+          }]
         }
+      }
+
+      # Operator itself and its admission webhook jobs — these are what's failing
+      prometheusOperator = {
+        tolerations = [{
+          key      = "CriticalAddonsOnly"
+          operator = "Exists"
+          effect   = "NoSchedule"
+        }]
+        admissionWebhooks = {
+          patch = {
+            tolerations = [{
+              key      = "CriticalAddonsOnly"
+              operator = "Exists"
+              effect   = "NoSchedule"
+            }]
+          }
+        }
+      }
+
+      # kube-state-metrics and node-exporter also need to run
+      kube-state-metrics = {
+        tolerations = [{
+          key      = "CriticalAddonsOnly"
+          operator = "Exists"
+          effect   = "NoSchedule"
+        }]
+      }
+
+      prometheus-node-exporter = {
+        tolerations = [{
+          operator = "Exists"
+        }]
       }
     })
   ]
