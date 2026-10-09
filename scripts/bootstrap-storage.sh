@@ -1,15 +1,6 @@
 #!/usr/bin/env bash
-# ---------------------------------------------------------------------------
-# bootstrap-storage.sh
-# Creates the default gp3 StorageClass for the cluster.
-#
-# WHY MANUAL: Fresh EKS clusters do not ship with a default StorageClass.
-# Without one, PVCs without an explicit storageClassName stay Pending.
-# This script creates gp3 as the default.
-#
-# RUN THIS: Immediately after `terraform apply` completes successfully.
-# Idempotent: safe to re-run.
-# ---------------------------------------------------------------------------
+# Creates default gp3 StorageClass. Run after terraform apply completes.
+# Idempotent — safe to re-run.
 set -euo pipefail
 
 kubectl apply -f - <<EOF
