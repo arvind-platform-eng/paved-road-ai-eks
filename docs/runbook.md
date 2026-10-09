@@ -140,3 +140,91 @@ Total time: ~30 minutes from clean slate.
 1. `cd terraform/envs/dev`
 2. `terraform destroy`
 3. Verify: `aws eks describe-cluster --name paved-road-ai-dev --region us-east-1` returns "not found"
+
+## Fresh deploy sequence
+
+**IMPORTANT:** Single-shot `terraform apply` fails reliably on fresh clusters.
+Follow this 5-phase sequence:
+
+```bash
+# Phase 1: cluster + addons + Karpenter (~15 min)
+cd terraform/envs/dev
+terraform init
+terraform apply -target=module.eks
+# type: yes
+
+# Phase 2: default StorageClass (~5 sec)
+cd ../../..
+./scripts/bootstrap-storage.sh
+
+# Phase 3: full stack - observability, etc (~10 min)
+cd terraform/envs/dev
+terraform apply
+# type: yes
+
+# Phase 4: ArgoCD GitOps bootstrap (~5 min)
+cd ../../..
+./scripts/bootstrap-argocd.sh
+# SAVE THE ADMIN PASSWORD IT PRINTS
+
+# Phase 5: Apply root Application (triggers platform component sync)
+kubectl apply -f apps/bootstrap/application.yaml
+
+# Watch platform components sync
+kubectl get applications -n argocd -w
+# Wait until all show Synced + Healthy
+```
+
+**Total time:** ~35-40 min from clean slate.
+
+## Teardown
+
+```bash
+# Delete ArgoCD applications first (so Terraform state stays clean)
+kubectl delete -f apps/bootstrap/application.yaml 2>/dev/null || true
+kubectl delete namespace argocd --wait=false --ignore-not-found
+
+# Then standard destroy
+cd terraform/envs/dev
+terraform destroy
+# type: yes (~10 min)
+
+# Verify clean
+aws eks describe-cluster --name paved-road-ai-dev --region us-east-1 2>&1 | head -3
+# Expected: ResourceNotFoundException
+```
+
+## Common recovery patterns
+
+**Helm release "cannot re-use a name that is still in use":**
+```bash
+kubectl delete namespace monitoring --wait=false --ignore-not-found
+cd terraform/envs/dev
+terraform state rm module.observability.helm_release.kube_prometheus_stack
+terraform apply
+```
+
+**"Kubernetes cluster unreachable" during Helm install:**
+```bash
+aws eks update-kubeconfig --name paved-road-ai-dev --region us-east-1
+kubectl get nodes  # verify auth works
+terraform apply  # usually succeeds on second run
+```
+
+**PVCs stuck Pending with <unset> StorageClass:**
+```bash
+./scripts/bootstrap-storage.sh
+kubectl delete pvc -n monitoring --all
+kubectl delete pods -n monitoring --field-selector=status.phase=Pending
+# Wait 3-5 min, verify with: kubectl get pods -n monitoring
+```
+
+**ArgoCD pods Pending (toleration issue):**
+```bash
+./scripts/bootstrap-argocd.sh  # idempotent - re-runs toleration patches
+```
+
+**ApplicationSet "error parsing values map":**
+Check apps/platform/applicationset.yaml has:
+- `goTemplate: true`
+- Values nested under `helm.values` with `|` block scalar
