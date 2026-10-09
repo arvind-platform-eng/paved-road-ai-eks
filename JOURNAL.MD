@@ -316,3 +316,26 @@ aws iam update-assume-role-policy \
 ```
 
 **Lesson:** When writing JSON policies with shell command substitution, always verify the resulting file contains real values before using it. Nested `$()` in heredocs is fragile on Windows. Two-stage approach — compute values first, then interpolate — is more reliable. Also: AWS CLI on Windows wants Windows paths. Use `cygpath -w` or `file://C:/Users/.../file.json` with forward slashes. Cross-platform tooling has these quirks — testing on Linux never exposes them.
+
+
+## 2026-10-09 — ArgoCD ApplicationSet successfully generating child apps
+
+**Context:** After fixing values map syntax, ApplicationSet started generating all 4 child applications.
+
+**Symptom:** All 4 child apps appeared with mixed health:
+- cert-manager: Synced + Degraded
+- ingress-nginx: OutOfSync + Missing
+- knative-serving: Synced + Healthy
+- kserve: Unknown status
+- root: Synced + Healthy
+
+**Root cause (initial findings — needs follow-up):**
+- cert-manager Degraded likely webhook timing (installs before CRDs fully ready)
+- ingress-nginx Missing likely CRD race or sync not yet triggered
+- kserve Unknown because KServe depends on Knative Serving CRDs being fully reconciled
+
+**Fix (deferred to next session):** Per-component debugging — probably needs sync waves (install cert-manager + wait, then ingress, then knative, then kserve) rather than parallel install.
+
+**Lesson:** ApplicationSet generates parallel Applications. Components with dependency chains (KServe needs Knative, both need cert-manager for webhooks) often fail on first parallel sync. ArgoCD sync waves (sync-wave annotations) exist exactly for this. Document as follow-up: add sync-wave ordering to ApplicationSet template.
+
+**Status:** GitOps bootstrap confirmed working end-to-end. Component-level sync issues to be resolved in Week 4 start.
