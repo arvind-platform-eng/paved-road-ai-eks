@@ -228,3 +228,44 @@ kubectl delete pods -n monitoring --field-selector=status.phase=Pending
 Check apps/platform/applicationset.yaml has:
 - `goTemplate: true`
 - Values nested under `helm.values` with `|` block scalar
+
+## Updated teardown sequence (prevents orphan EBS volumes)
+
+**Problem:** `terraform destroy` doesn't clean up PVCs/PVs created by dynamic provisioning (StorageClass + EBS CSI). These orphans remain as EBS volumes in your account after destroy, costing ~₹0.095/GB-month until manually deleted.
+
+**Correct teardown sequence:**
+
+```bash
+# 1. Delete PVCs while cluster is still alive (EBS CSI driver cleans up EBS)
+kubectl delete pvc --all -A --timeout=60s
+kubectl delete pv --all --timeout=60s
+
+# 2. Delete ArgoCD applications (if used)
+kubectl delete -f apps/bootstrap/application.yaml 2>/dev/null || true
+
+# 3. Delete all workload namespaces
+kubectl delete namespace argocd inference knative-serving kserve cert-manager --wait=false --ignore-not-found
+
+# 4. Terminate any Karpenter-managed GPU instances
+aws ec2 describe-instances \
+  --filters "Name=tag:karpenter.sh/nodepool,Values=gpu-spot" \
+            "Name=instance-state-name,Values=pending,running" \
+  --query 'Reservations[*].Instances[*].InstanceId' --output text | \
+  xargs -r aws ec2 terminate-instances --instance-ids 2>/dev/null
+
+# 5. Standard terraform destroy
+cd terraform/envs/dev
+terraform destroy
+# type: yes
+
+# 6. Verify no orphan EBS volumes
+aws ec2 describe-volumes \
+  --filters "Name=tag:kubernetes.io/cluster/paved-road-ai-dev,Values=owned" \
+  --query 'Volumes[*].VolumeId' --output text
+# Expected: empty. If anything shown:
+#   for vol in <ids>; do aws ec2 delete-volume --volume-id $vol; done
+
+# 7. Verify cluster gone
+aws eks describe-cluster --name paved-road-ai-dev --region us-east-1 2>&1 | head -3
+# Expected: ResourceNotFoundException
+```
