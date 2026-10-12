@@ -339,3 +339,15 @@ aws iam update-assume-role-policy \
 **Lesson:** ApplicationSet generates parallel Applications. Components with dependency chains (KServe needs Knative, both need cert-manager for webhooks) often fail on first parallel sync. ArgoCD sync waves (sync-wave annotations) exist exactly for this. Document as follow-up: add sync-wave ordering to ApplicationSet template.
 
 **Status:** GitOps bootstrap confirmed working end-to-end. Component-level sync issues to be resolved in Week 4 start.
+
+## 2026-10-12 — bootstrap-argocd.sh toleration patch race condition
+
+**Context:** Second deploy using automated bootstrap script. ArgoCD pods stuck Pending.
+
+**Symptom:** All 7 ArgoCD pods Pending with 0/1 Ready. Root Application created but no sync status (because controller wasn't running to process it).
+
+**Root cause:** bootstrap-argocd.sh runs kubectl apply then immediately runs for-loop to patch tolerations. On fresh clusters, Kubernetes API hasn't fully materialized the Deployment/StatefulSet objects yet when the for-loop starts. Patches silently fail (|| true in script masks errors). Script's "wait for pods Ready" step then also fails silently.
+
+**Fix:** Increased sleep from 10s to 30s between install and patch. Added verification step to print actual tolerations after patch.
+
+**Lesson:** When scripting Kubernetes resource creation + modification, the API is eventually consistent. "kubectl apply" returns immediately but resources take seconds to actually exist. Always wait with `kubectl wait --for=condition=... --timeout=...` instead of `sleep`, OR verify the resource exists before modifying it. Also: `|| true` in bash scripts hides real failures — only use it when you've thought through the implications.
