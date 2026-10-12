@@ -20,7 +20,7 @@ kubectl apply --server-side -n argocd \
 
 echo ""
 echo "Waiting 10s for manifests to settle..."
-sleep 10
+sleep 30
 
 # 4. Patch tolerations so pods schedule on tainted system nodes
 echo "Patching tolerations..."
@@ -37,8 +37,9 @@ done
 kubectl delete pods -n argocd --field-selector=status.phase=Pending --ignore-not-found
 
 echo ""
-echo "Waiting for all ArgoCD pods to be Ready (up to 5 min)..."
-kubectl wait --for=condition=Ready pods -l app.kubernetes.io/part-of=argocd -n argocd --timeout=300s || true
+# Add this before "Waiting for all ArgoCD pods to be Ready":
+echo "Verifying tolerations applied..."
+kubectl get deployment -n argocd -o jsonpath='{range .items[*]}{.metadata.name}{": "}{.spec.template.spec.tolerations}{"\n"}{end}'
 
 echo ""
 echo "=========================================="
