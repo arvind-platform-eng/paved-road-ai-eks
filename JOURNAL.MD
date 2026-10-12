@@ -351,3 +351,55 @@ aws iam update-assume-role-policy \
 **Fix:** Increased sleep from 10s to 30s between install and patch. Added verification step to print actual tolerations after patch.
 
 **Lesson:** When scripting Kubernetes resource creation + modification, the API is eventually consistent. "kubectl apply" returns immediately but resources take seconds to actually exist. Always wait with `kubectl wait --for=condition=... --timeout=...` instead of `sleep`, OR verify the resource exists before modifying it. Also: `|| true` in bash scripts hides real failures — only use it when you've thought through the implications.
+
+
+
+## 2026-10-12/13 — Week 4 Mistral deploy: 8-hour debug marathon, GPU never provisioned
+
+**Context:** Push to serve Mistral 7B on EKS/Karpenter/KServe/vLLM. Fresh cluster deployed today using the Week 3 runbook. Hit 7+ cascading issues.
+
+**Issues hit (in order of discovery):**
+1. Single-shot `terraform apply` auth race (recognized from Week 3, used -target workaround)
+2. Pod-per-node limit on t3.medium (17 pods max, cluster had 20+ components queued)
+3. ArgoCD ApplicationSet installed Knative *operator* not Knative *Serving*
+4. KServe v0.13.1 manifest references dead image `gcr.io/kubebuilder/kube-rbac-proxy:v0.13.1` (image moved to quay.io/brancz/kube-rbac-proxy)
+5. Karpenter IAM role missing iam:GetInstanceProfile
+6. EC2 Spot service-linked role not created (account-wide first-time setup)
+7. Karpenter 1.0.6 incompatible with K8s 1.35 (needed version 1.6.0+)
+8. us-east-1b AWS capacity exhausted for GPU instances overnight
+9. EC2NodeClass selected ARM64 AMI by default for AMD64 instance types
+
+**Root cause of failure to deploy Mistral tonight:** AWS GPU capacity exhausted in us-east-1 availability zones Monday night around midnight local time. All config fixes applied but AWS could not fulfill the capacity request.
+
+**What was proven to work tonight:**
+- EKS cluster + addons via Terraform (clean phased deploy)
+- Karpenter 1.6.0 on K8s 1.35 (version compat fix)
+- EBS CSI + IRSA + default StorageClass
+- Prometheus + Grafana + Alertmanager + DCGM exporter
+- cert-manager + Knative Serving + KServe installed via direct Helm (bypassed ArgoCD)
+- Mistral InferenceService manifest validated by KServe controller
+- Karpenter correctly interpreting NodePool requirements and submitting EC2 launch requests
+
+**What failed:** EC2 instance launch itself — AWS returned UnfulfillableCapacity for g4dn.xlarge, g5.xlarge, g6.xlarge across us-east-1a and us-east-1b. Not a code issue.
+
+**Lesson 1:** AWS GPU capacity varies dramatically by time-of-day and region. First try didn't work? Try again 2-6 hours later. Daytime generally has more capacity than overnight.
+
+**Lesson 2:** When Karpenter can't provision, check 4 things in order:
+  a) AWS quota (vCPU limits per instance family)
+  b) Instance type match (ARM AMI vs x86 instance type)
+  c) Spot/on-demand mix in NodePool (needs 5+ options for on-demand)
+  d) AWS actual capacity (UnfulfillableCapacity error — not fixable, retry later)
+
+**Lesson 3:** Karpenter version MUST match K8s version. Karpenter chart doesn't tell you this at install time — only shows error at runtime when trying to reconcile NodeClass. Compatibility matrix: https://karpenter.sh/docs/upgrading/compatibility/
+
+**Lesson 4:** Scaffolded project templates age fast. ApplicationSet manifests, image references, Helm chart versions — all go stale within months. Fresh deploy ≠ working deploy if the scaffold is >6 months old.
+
+**Lesson 5:** The "AWS is not giving you a GPU" problem is unfixable by any amount of code. When you see UnfulfillableCapacity across multiple instance families and AZs, stop debugging and come back in a few hours.
+
+**Next session goals:**
+- Deploy early morning (6-9am local) when AWS capacity typically better
+- Use the repo's current state (all fixes committed) — should deploy clean
+- GPU provisioning should take 2-3 min when capacity available
+- Mistral first inference within 30 min of fresh apply
+
+**Session timing: 4pm Monday → 12:30am Tuesday = 8.5 hours.** Infrastructure proven, debugging patterns learned, repo fixes committed. The AWS capacity blocker is not something to beat up on yourself for — it genuinely is an availability issue beyond our control.
