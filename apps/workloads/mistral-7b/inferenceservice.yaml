@@ -62,12 +62,12 @@ spec:
 
         resources:
           requests:
-            cpu: "4"
-            memory: "16Gi"
+            cpu: "3"
+            memory: "12Gi"
             nvidia.com/gpu: "1"
           limits:
-            cpu: "8"
-            memory: "32Gi"
+            cpu: "3"
+            memory: "14Gi"
             nvidia.com/gpu: "1"
 
         # vLLM takes time to load the model (~90s for 7B)

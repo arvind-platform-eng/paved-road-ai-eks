@@ -6,7 +6,7 @@ variable "cluster_name" {
 variable "karpenter_version" {
   description = "Karpenter Helm chart version"
   type        = string
-  default     = "1.0.6"
+  default     = "1.6.0"
 }
 
 variable "tags" {
