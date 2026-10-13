@@ -40,7 +40,7 @@ spec:
           - "--served-model-name"
           - "mistral-7b"
           - "--dtype"
-          - "half"
+          - half
           - "--max-model-len"
           - "8192"
           - "--gpu-memory-utilization"
