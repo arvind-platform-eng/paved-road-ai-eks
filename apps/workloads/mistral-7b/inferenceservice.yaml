@@ -41,7 +41,6 @@ spec:
           - "mistral-7b"
           - "--dtype"
           - "half"
-          - "bfloat16"
           - "--max-model-len"
           - "8192"
           - "--gpu-memory-utilization"
