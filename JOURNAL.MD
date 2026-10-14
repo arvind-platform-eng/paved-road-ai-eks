@@ -22,6 +22,94 @@ Each entry has 6 sections. Keep them short — 2-3 sentences each is usually eno
 **Lesson:** What will you do differently next time?
 ```
 
+## 2026-10-14 — Mistral deploy session: KServe probe reconciliation + AWS GPU capacity wall
+
+Second daytime session (3pm-10pm IST) after 2 overnight attempts on Oct 12 and Oct 13.
+Went in with Terraform fixes from last session committed. Hit new blockers.
+
+### What finally proved itself in production
+
+The fixes committed from Oct 12-13 sessions worked on first try without manual aws CLI patching:
+
+- **Karpenter EKS access entry** (commit `fix(karpenter): add EKS access entry + IAM instance profile permissions`): GPU node provisioned by Karpenter joined the cluster immediately. Previously (Oct 12-13), nodes would boot successfully — kubelet starting, NVIDIA driver loading — but EKS silently rejected registration because the node IAM role was not in authorized principals. Now baked into Terraform, survives destroy/apply cycles.
+
+- **Karpenter IAM instance profile permissions** (same commit): Karpenter controller provisioned EC2 cleanly, no `AccessDenied: iam:GetInstanceProfile` errors in logs.
+
+- **Mistral T4-GPU manifest tuning** (commit `fix(mistral): tune for T4 GPU`): vLLM successfully loaded 13.5 GB of Mistral 7B weights into T4's 16 GB GPU memory. Confirmed via logs: `dtype=torch.float16, max_seq_len=4096, enforce_eager=True`.
+
+- **Direct install chain** (cert-manager → Knative Serving CRDs → KServe → NVIDIA device plugin): faster and more reliable than the scaffold's ArgoCD ApplicationSet (which installs Knative *operator* instead of Knative *Serving* CRDs).
+
+### New blocker 1: KServe injects default readinessProbe even when manifest omits it
+
+In KServe RawDeployment mode (`serving.kserve.io/deploymentMode: RawDeployment`), when the InferenceService spec has no probes defined, KServe still generates a Deployment with a default `readinessProbe: failureThreshold=3, periodSeconds=10` (30-sec total window). On T4 GPUs where Mistral 7B initial load takes 5-10 min (weights download, CUDA init, warm-up), this probe causes container restarts and model re-downloads from scratch each cycle.
+
+Live `kubectl patch` on the generated Deployment to remove the probe gets reconciled back by the KServe operator within 60 sec. The only way to make it stick is to explicitly set probes you DO want in the InferenceService spec, OR remove them in such a way that the operator sees "intentional empty" state.
+
+**Fix:** Remove `readinessProbe` and `livenessProbe` entirely from the manifest file (commit `fix(mistral): remove readinessProbe and livenessProbe during model load`). Keep only `startupProbe` with a 15-min window (90 failures × 10 sec period). KServe RawDeployment treats this as explicit intent and does not inject defaults.
+
+**Alternative tested that didn't work:** `kubectl scale deployment kserve-controller-manager -n kserve --replicas=0` during load, then scale back up — the operator reconciles everything on restart anyway, probe comes back.
+
+### New blocker 2: Multiple ReplicaSets stacking during rapid redeploys
+
+Rapid patch + apply + delete pod cycles (natural during debugging) left 3 orphan ReplicaSets each with `DESIRED: 1`, meaning 3 pods competing for the single GPU node. Only 1 pod can schedule → others sit `Pending` indefinitely, blocking everything.
+
+**Fix during debugging:** `kubectl get rs -n inference` to list, `kubectl delete rs OLDER_NAME` to clean up old generations. Not a code fix — operational hygiene.
+
+**Prevention:** For a clean restart during debugging, delete the entire InferenceService first (`kubectl delete inferenceservice mistral-7b -n inference`), wait 30 sec for cleanup, then re-apply. This removes all orphan ReplicaSets atomically.
+
+### New blocker 3 (unfixable in code): AWS GPU capacity in us-east-1
+
+Hit twice now — Monday night (Oct 12) and Tuesday evening (Oct 14). After multiple terraform destroy/apply cycles in the same session, AWS stopped giving us g4dn.xlarge or g5.xlarge even at 9pm local (US midday). Karpenter errors:
+
+UnfulfillableCapacity: Unable to fulfill capacity due to your request configuration
+VcpuLimitExceeded: You have requested more vCPU capacity than your current vCPU limit of 8
+
+
+Simultaneous: smaller instances have no capacity, larger ones blocked by quota. Caught in a scheduling nutcracker that no manifest change can resolve.
+
+**Diagnosis:** AWS GPU capacity in us-east-1 for 8-vCPU-quota customers is time-of-day sensitive AND exhausts if you churn too many destroy/apply cycles in one session. Each terraform destroy returns capacity to AWS, but AWS doesn't necessarily reserve it for your next apply.
+
+**Fix (not code):** Deploy early morning IST (6-9am = US night, best capacity window). Avoid multiple destroy/apply cycles in one session. Alternative: switch region (us-west-2, eu-west-1 often better for GPU) — but that's a full infrastructure migration.
+
+### Session tally (across 3 nights)
+
+| Component | Status | Proven at |
+|---|---|---|
+| EKS cluster via phased terraform | ✅ | 3 clean deploys |
+| Karpenter 1.6.0 on K8s 1.35 | ✅ | Oct 12 fix committed |
+| EBS CSI with IRSA | ✅ | Oct 9 |
+| Default gp3 StorageClass | ✅ | Oct 9 |
+| Prometheus + Grafana + DCGM | ✅ | Oct 9 |
+| cert-manager + Knative Serving + KServe | ✅ | Oct 13 (direct install) |
+| NVIDIA device plugin | ✅ | Oct 13 |
+| EKS access entry for Karpenter node role | ✅ | Oct 14 (committed) |
+| IAM instance profile permissions | ✅ | Oct 14 (committed) |
+| Karpenter provisioning GPU node | ✅ | Oct 14 (first-try success) |
+| vLLM loading Mistral 7B into T4 GPU | ✅ | Oct 14 (13.5 GB confirmed) |
+| First inference curl | ❌ | Blocked by AWS capacity on final retry |
+
+### Saturday session plan
+
+With tonight's commits (`fix(mistral): remove readinessProbe and livenessProbe`), estimated path to first inference:
+
+1. Deploy early morning IST (6-9am) — best AWS capacity window
+2. Fresh `terraform apply` phased sequence (~25 min total)
+3. Install AI stack directly (cert-manager + Knative Serving + KServe + NVIDIA plugin, ~15 min)
+4. Deploy Mistral — pod schedules on g4dn.xlarge, vLLM loads for 5-10 min with no probe interference
+5. Port-forward on local port 18080 (not 8080 — avoids Jenkins collision on my dev machine)
+6. First inference curl — capture to `docs/evidence/first-mistral-response.json`
+
+**Estimated time: 60-75 min clean deploy to first inference, IF AWS has GPU capacity in the morning window.**
+
+### Lessons for future portfolio work
+
+- **Scaffold completeness audit** before building on top: check that generated Terraform includes EKS access entries for every node role, that generated manifests have the right probe setup for the workload type, and that generated install flows (ArgoCD ApplicationSet) actually install the right chart versions.
+- **Model-serving probes need custom tuning**: default K8s probes assume web apps that boot in seconds. LLM inference containers with multi-GB model loads need either long startupProbe timeouts (15+ min) or no readiness/liveness probes during initial load window.
+- **AWS GPU capacity is a real operational constraint**: your quota tells you the ceiling, but AWS actual capacity determines whether you can USE it. Daytime deploys in less-contested regions.
+- **Rapid destroy/apply cycles against AWS exhaust capacity**: for debugging, prefer `kubectl delete` for the specific resource over full `terraform destroy`.
+
+---
+
 ---
 
 ## 2026-08-24 — HuggingFace token validation returns misleading auth error
