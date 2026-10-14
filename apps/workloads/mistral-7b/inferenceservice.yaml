@@ -42,11 +42,12 @@ spec:
           - "--dtype"
           - half
           - "--max-model-len"
-          - "8192"
+          - "4096"
           - "--gpu-memory-utilization"
           - "0.9"
           - "--port"
           - "8080"
+          - "--enforce-eager"
 
         ports:
           - name: http1
@@ -75,8 +76,8 @@ spec:
           httpGet:
             path: /health
             port: 8080
-          failureThreshold: 60
-          periodSeconds: 5
+          failureThreshold: 90
+          periodSeconds: 10
 
         readinessProbe:
           httpGet:
