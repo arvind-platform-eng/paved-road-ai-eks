@@ -316,3 +316,53 @@ resource "kubectl_manifest" "gpu_node_pool" {
 
   depends_on = [kubectl_manifest.gpu_node_class]
 }
+
+
+
+# -----------------------------------------------------------------------------
+# EKS access entry for Karpenter-provisioned nodes
+# -----------------------------------------------------------------------------
+# Without this, GPU nodes provisioned by Karpenter boot successfully, kubelet
+# starts, but the EKS API server silently rejects their registration because
+# the node's IAM role is not authorized to join the cluster.
+#
+# Discovered 2026-10-13: GPU nodes repeatedly provisioned by Karpenter but
+# never joined cluster. Root cause was missing access entry for the node role.
+# -----------------------------------------------------------------------------
+resource "aws_eks_access_entry" "karpenter_node" {
+  cluster_name  = var.cluster_name
+  principal_arn = aws_iam_role.karpenter_node.arn
+  type          = "EC2_LINUX"
+}
+
+# -----------------------------------------------------------------------------
+# IAM policy: Karpenter controller must manage EC2 instance profiles
+# -----------------------------------------------------------------------------
+# Karpenter 1.x+ creates/attaches/deletes instance profiles dynamically for
+# the nodes it provisions. Without these permissions, the EC2NodeClass stays
+# in Unknown state and Karpenter cannot launch new nodes.
+#
+# Error without this: "AccessDenied: User ... is not authorized to perform:
+# iam:GetInstanceProfile on resource: instance profile ..."
+# -----------------------------------------------------------------------------
+resource "aws_iam_role_policy" "karpenter_instance_profile" {
+  name = "KarpenterInstanceProfilePermissions"
+  role = aws_iam_role.karpenter_controller.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "iam:GetInstanceProfile",
+        "iam:CreateInstanceProfile",
+        "iam:DeleteInstanceProfile",
+        "iam:AddRoleToInstanceProfile",
+        "iam:RemoveRoleFromInstanceProfile",
+        "iam:TagInstanceProfile",
+        "iam:PassRole"
+      ]
+      Resource = "*"
+    }]
+  })
+}
