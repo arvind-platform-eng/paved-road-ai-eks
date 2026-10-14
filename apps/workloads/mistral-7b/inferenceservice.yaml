@@ -60,7 +60,8 @@ spec:
               secretKeyRef:
                 name: huggingface-token
                 key: token
-
+        
+          
         resources:
           requests:
             cpu: "3"
@@ -71,8 +72,22 @@ spec:
             memory: "14Gi"
             nvidia.com/gpu: "1"
 
+            startupProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          failureThreshold: 90
+          periodSeconds: 10
+        
+          httpGet:
+            path: /health
+            port: 8080
+          failureThreshold: 90
+          periodSeconds: 10
+
         # Graceful shutdown — drain the request queue before termination
         lifecycle:
           preStop:
             exec:
               command: ["/bin/sh", "-c", "sleep 30"]
+
