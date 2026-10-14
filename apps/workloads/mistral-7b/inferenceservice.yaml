@@ -71,28 +71,6 @@ spec:
             memory: "14Gi"
             nvidia.com/gpu: "1"
 
-        # vLLM takes time to load the model (~90s for 7B)
-        startupProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          failureThreshold: 90
-          periodSeconds: 10
-
-        readinessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          failureThreshold: 60       # increase from default
-          periodSeconds: 10          # check every 10 sec
-          initialDelaySeconds: 60    # wait 60s before first check
-
-        livenessProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          periodSeconds: 30
-
         # Graceful shutdown — drain the request queue before termination
         lifecycle:
           preStop:
