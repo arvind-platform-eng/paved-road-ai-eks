@@ -22,6 +22,168 @@ Each entry has 6 sections. Keep them short — 2-3 sentences each is usually eno
 **Lesson:** What will you do differently next time?
 ```
 
+## 2026-10-15 — SUCCESS: Mistral 7B first inference served on T4 GPU 🎯
+
+Fourth session after 3 overnight debugging attempts (Oct 12, 13, 14).
+Started 5:45pm IST, first inference 7:56pm IST — **~2 hour clean deploy.**
+All Oct 12-14 Terraform fixes proven in production.
+
+### Final working stack
+
+- EKS 1.35 cluster via phased Terraform
+- Karpenter 1.6.0 — provisioned g4dn.xlarge spot GPU, joined cluster on first try
+- EBS CSI + default gp3 StorageClass
+- Prometheus + Grafana + Alertmanager + DCGM GPU exporter
+- cert-manager + Knative Serving + KServe (direct install, not ArgoCD)
+- NVIDIA device plugin (registered GPU as allocatable within 60 sec)
+- Mistral 7B served via vLLM 0.6.3 through KServe InferenceService (RawDeployment mode)
+- OpenAI-compatible `/v1/completions` and `/v1/chat/completions` endpoints
+
+### First inference response (saved to docs/evidence/first-mistral-response.json)
+
+Prompt: "Explain Kubernetes to a 10-year-old in 3 sentences."
+Mistral 7B generated 138 completion tokens in ~1 second on T4 GPU:
+> "Kubernetes is like a magician's assistant, helping many toy robots
+> (applications) to work together smoothly on a big playing field
+> (data center or cloud)..."
+
+### New blockers hit today
+
+**Blocker 1: Mistral manifest YAML indentation error**
+
+After yesterday's edits (removing readinessProbe + livenessProbe), the
+remaining startupProbe block ended up incorrectly indented inside the
+`resources:` block instead of as a sibling. Kubernetes API server
+rejected the InferenceService with:
+unknown field “spec.predictor.containers[0].resources.failureThreshold”
+unknown field “spec.predictor.containers[0].resources.httpGet”
+unknown field “spec.predictor.containers[0].resources.periodSeconds”
+
+
+File also had a DUPLICATE orphan probe block (httpGet + failureThreshold +
+periodSeconds without the startupProbe: parent key) — residue from manual
+cleanup in yesterday's exhausted-brain editing.
+
+**Fix:** Open in VS Code (not notepad - YAML indentation is critical),
+delete both mal-indented and orphan blocks, add single startupProbe at
+8-space indent (same level as resources:, env:, ports:, lifecycle:).
+
+**Lesson:** When editing YAML at 11pm with cranky toddler, use VS Code
+with YAML plugin (shows red squiggles on indent errors immediately).
+Notepad gives zero validation. Verify after every edit with:
+grep -c “^ startupProbe:” apps/workloads/mistral-7b/inferenceservice.yaml
+
+Should return exactly 1.
+
+**Blocker 2: NVIDIA device plugin install silently incomplete**
+
+Phase 4 bootstrap chain included `kubectl apply` for the NVIDIA device
+plugin, but something in the heredoc multi-step block had a parse issue
+(`error: flag needs an argument: 'n' in -n`) that prevented the
+`kubectl set image` from running cleanly. Downstream effect: the GPU node
+joined cluster with `nvidia.com/gpu.present=true` label but the Allocatable
+section had NO `nvidia.com/gpu` entry. Pod stayed Pending with:
+0/3 nodes are available: 1 Insufficient nvidia.com/gpu, 2 node(s) had untolerated taints
+
+
+**Diagnosis:** `kubectl get pods -n kube-system | grep nvidia` returned
+"No resources found" initially. Had to re-apply the NVIDIA plugin manifest
+separately. Once plugin pod running (visible in `kubectl get pods -A`
+later), kubelet registered GPU as allocatable within 60 sec, Karpenter
+reconciled, pod scheduled.
+
+**Lesson:** After any Phase 4 install chain, VERIFY each component
+separately with explicit kubectl queries. Don't assume `kubectl apply`
+succeeded in a batch — pipe output to a log file and grep for errors.
+
+**Blocker 3: vLLM KV cache allocation failure on T4 at gpu-memory-utilization 0.9**
+
+Model weights (13.5 GB) loaded successfully to T4 (16 GB), but then vLLM
+tried to allocate KV cache in remaining memory and crashed:
+
+ValueError: No available memory for the cache blocks.
+Try increasing gpu_memory_utilization when initializing the engine.
+
+
+With 0.9 utilization, vLLM only tries to use 14.4 GB total — leaving 0.9 GB
+for KV cache after weights. Not enough for even 1 token of context given
+CUDA overhead.
+
+**Fix:** Bump `--gpu-memory-utilization` from `0.9` to `0.95` (5% headroom
+instead of 10%). Live-patched via `kubectl patch`, confirmed working, then
+committed to manifest file so it survives future deploys.
+
+**Lesson:** T4 GPUs with 7B models operate at the memory edge. The default
+0.9 utilization in most vLLM examples assumes 24 GB+ GPUs (A10G, A100).
+For T4 (16 GB) with a 7B model, 0.95 is the right floor.
+
+**Blocker 4: Multiple ReplicaSets after rapid patches (same as Oct 14)**
+
+After `kubectl patch inferenceservice` to apply the 0.95 fix, KServe
+created a new ReplicaSet while the old one still existed. Both wanted
+DESIRED=1, meaning 2 pods competing for the single GPU — only one could
+schedule, both stayed Pending/competing.
+
+**Fix:** `kubectl delete rs OLDER_NAME -n inference` to clean up previous
+generation. The NEW ReplicaSet (with 0.95 args) survives, pod schedules
+on GPU, model loads successfully.
+
+**Note:** Make sure to delete the OLDER RS (older AGE in `kubectl get rs`),
+NOT the newer one. On the first attempt we deleted the wrong one and
+survived pod still had the 0.9 arg. Second attempt — correctly identified
+and deleted old RS, new pod with 0.95 came up and loaded model.
+
+### Full session timeline (worth noting for next time estimation)
+
+- 5:45pm — session start, pre-flight checks (all green from Oct 14 commits)
+- 5:47pm — Phase 1: terraform apply -target=module.eks (20 min)
+- 6:07pm — Phase 2: kubectl + bootstrap-storage.sh (5 min)
+- 6:17pm — Phase 3: full terraform apply (10 min)
+- 6:27pm — Phase 4: AI stack install (15 min, hit NVIDIA plugin blocker)
+- 6:38pm — Phase 5 start: Mistral deploy (hit YAML indent blocker)
+- 6:46pm — Mistral manifest fixed, re-applied
+- 6:52pm — GPU node joined cluster (EKS access entry fix proven!)
+- 7:03pm — NVIDIA plugin registered GPU as allocatable
+- 7:13pm — Mistral pod scheduled on GPU
+- 7:35pm — hit KV cache memory blocker
+- 7:42pm — gpu-memory 0.95 patch applied, old ReplicaSet cleaned
+- 7:52pm — model loading started with correct args
+- 7:56pm — **FIRST INFERENCE SUCCESSFUL** 🎯
+- 8:30pm — Grafana GPU dashboard query captured
+- 8:33pm — teardown started
+- 9:10pm — teardown complete, EBS clean, cluster gone
+
+**Total session: ~3.5 hours including teardown. Effective deploy time: ~2 hours.**
+
+### Permanent lessons captured in repo
+
+| Lesson | Where |
+|---|---|
+| EKS access entry for Karpenter node role | `terraform/modules/karpenter/main.tf` |
+| IAM instance profile permissions for Karpenter controller | `terraform/modules/karpenter/main.tf` |
+| T4 GPU requires `--dtype half` not bfloat16 | `apps/workloads/mistral-7b/inferenceservice.yaml` |
+| T4 KV cache fits with `--max-model-len 4096` | `apps/workloads/mistral-7b/inferenceservice.yaml` |
+| T4 needs `--enforce-eager` (CUDA graphs unstable) | `apps/workloads/mistral-7b/inferenceservice.yaml` |
+| T4 needs `--gpu-memory-utilization 0.95` | `apps/workloads/mistral-7b/inferenceservice.yaml` |
+| KServe RawDeployment: omit readinessProbe/livenessProbe | `apps/workloads/mistral-7b/inferenceservice.yaml` |
+| Startup probe 90 × 10 sec = 15 min window | `apps/workloads/mistral-7b/inferenceservice.yaml` |
+
+### Scorecard: 100-day plan Week 4
+
+| Goal | Status |
+|---|---|
+| EKS cluster via Terraform | ✅ |
+| GPU autoscaling via Karpenter | ✅ |
+| Observability (metrics + GPU) | ✅ |
+| Model serving platform (KServe) | ✅ |
+| LLM inference on GPU (Mistral 7B) | ✅ |
+| Portfolio-ready documentation | ✅ |
+| Public GitHub repo with evidence | ✅ |
+
+**Week 4 complete.** Ready to move to Week 5 goals.
+
+---
+
 ## 2026-10-14 — Mistral deploy session: KServe probe reconciliation + AWS GPU capacity wall
 
 Second daytime session (3pm-10pm IST) after 2 overnight attempts on Oct 12 and Oct 13.
