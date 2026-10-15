@@ -1,0 +1,20 @@
+Capacity:
+  cpu:                4
+  ephemeral-storage:  104779756Ki
+  hugepages-1Gi:      0
+  hugepages-2Mi:      0
+  memory:             16164848Ki
+  nvidia.com/gpu:     1
+  pods:               58
+Allocatable:
+  cpu:                3920m
+  ephemeral-storage:  95491281146
+  hugepages-1Gi:      0
+  hugepages-2Mi:      0
+  memory:             15148016Ki
+  nvidia.com/gpu:     1
+  pods:               58
+System Info:
+  Machine ID:                 ec2c907db7fc0abae3346e72192ff13e
+  System UUID:                ec2c907d-b7fc-0aba-e334-6e72192ff13e
+  Boot ID:                    b9df2259-6341-41a2-adf3-e355dea14ef2

@@ -1,0 +1,2 @@
+NAME                   TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)   AGE
+mistral-7b-predictor   ClusterIP   172.20.151.255   <none>        80/TCP    14m

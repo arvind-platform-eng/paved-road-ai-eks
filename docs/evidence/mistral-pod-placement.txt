@@ -1,0 +1,2 @@
+NAME                                  READY   STATUS    RESTARTS   AGE   IP            NODE                          NOMINATED NODE   READINESS GATES
+mistral-7b-predictor-9fb97f94-w6mgx   1/1     Running   0          14m   10.0.11.229   ip-10-0-11-179.ec2.internal   <none>           <none>

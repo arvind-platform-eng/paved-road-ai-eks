@@ -44,7 +44,7 @@ spec:
           - "--max-model-len"
           - "4096"
           - "--gpu-memory-utilization"
-          - "0.9"
+          - "0.95"
           - "--port"
           - "8080"
           - "--enforce-eager"
@@ -72,13 +72,7 @@ spec:
             memory: "14Gi"
             nvidia.com/gpu: "1"
 
-            startupProbe:
-          httpGet:
-            path: /health
-            port: 8080
-          failureThreshold: 90
-          periodSeconds: 10
-        
+        startupProbe:
           httpGet:
             path: /health
             port: 8080
