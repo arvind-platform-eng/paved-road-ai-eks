@@ -7,9 +7,10 @@ categories: [Platform Engineering, Kubernetes]
 ---
 
 # Paved Road for AI Workloads: EKS + Karpenter + KServe + vLLM Reference Architecture
-![Mistral 7B first inference](docs/screenshots/Mistral-first-response-json.png)
 
 > *A production-shaped reference for serving open-source LLMs on EKS with GPU autoscaling. Full code: [paved-road-ai-eks on GitHub](https://github.com/arvind-platform-eng/paved-road-ai-eks)*
+
+![Mistral 7B first inference response - API output](docs/screenshots/Mistral-first-response-json.png)
 
 ---
 
@@ -34,13 +35,13 @@ I spent 3 nights debugging my way to a working deployment. This post is the refe
 
 **First successful inference: 2026-10-15, 19:56 IST. Mistral 7B explaining Kubernetes to a 10-year-old:**
 
+![Mistral first response in terminal](docs/screenshots/12.Mistral-first-response.png)
+
 > *"Kubernetes is like a magician's assistant, helping many toy robots (applications) to work together smoothly on a big playing field (data center or cloud), making sure they stay healthy and play nicely with each other."*
 
 Let's walk through how it's built.
 
 ---
-
-## 2. Architecture at a glance
 
 ## 2. Architecture at a glance
 
@@ -87,6 +88,9 @@ graph TB
     class SysNode sysNode
     class GPUNode gpuNode
 ```
+*The stack running — 2 system nodes + 1 Karpenter-provisioned GPU node:*
+
+![Cluster nodes Ready - 2 system + 1 GPU](docs/screenshots/01-cluster-nodes-ready.png)
 
 When no inference requests are coming in, Karpenter scales the GPU node to zero. The next request triggers a 3-5 minute cold start (node provisioning + model download), but idle cost drops to pennies per day instead of ₹115 per month for always-on.
 
@@ -169,6 +173,12 @@ GPU node joined the cluster, carried the `nvidia.com/gpu.present=true` label, an
 
 Container started, model weights downloaded fine, then crashed with: *"TypeError: expected str, bytes or os.PathLike object, not NoneType"* in `tokenization_llama.py`'s `get_spm_processor`. Mistral ships both a fast tokenizer (`tokenizer.json`) and a slow SentencePiece tokenizer (`tokenizer.model`). vLLM's default `--tokenizer-mode=auto` tries fast first, falls back to slow when fast misbehaves, but the slow loader expected `self.vocab_file` to be set and it wasn't. Fix: `--tokenizer-mode mistral` in vLLM args — uses Mistral's native tokenizer path, bypassing the Hugging Face fallback chain entirely. The lesson: never trust "auto" settings in inference engines on newer models. Pick the explicit mode that matches your model family, even when auto *should* work.
 
+*After all six gotchas resolved, vLLM boots cleanly and the API server comes up:*
+
+![vLLM Uvicorn running - API server ready](docs/screenshots/11.Mistral7b-uvicorn-running.png)
+
+![All pods running across all namespaces](docs/screenshots/02-all-pods-running.png)
+
 ---
 
 ## 5. Cost + observability
@@ -194,6 +204,10 @@ The kube-prometheus-stack chart ships Prometheus, Grafana, Alertmanager, and nod
 
 - **DCGM exporter** (NVIDIA's GPU metrics daemon) — exposes `DCGM_FI_DEV_GPU_UTIL`, `DCGM_FI_DEV_FB_USED`, `DCGM_FI_DEV_GPU_TEMP`, and ~40 other GPU-specific metrics scraped automatically by Prometheus.
 - **vLLM `/metrics` endpoint** — scraped to collect token throughput, request latency percentiles, running request count, and KV cache utilization. These are the metrics that actually tell you if the system is healthy.
+
+*The DCGM-powered Grafana dashboard capturing GPU state during inference:*
+
+![Grafana GPU dashboard - node compute metrics](docs/screenshots/10.Mistral-grafana-dashboard.png)
 
 Three dashboards worth importing immediately:
 - **12239** — NVIDIA DCGM Exporter Dashboard (GPU utilization, memory, temperature)
