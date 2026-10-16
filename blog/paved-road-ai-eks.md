@@ -10,7 +10,7 @@ categories: [Platform Engineering, Kubernetes]
 
 > *A production-shaped reference for serving open-source LLMs on EKS with GPU autoscaling. Full code: [paved-road-ai-eks on GitHub](https://github.com/arvind-platform-eng/paved-road-ai-eks)*
 
-![Mistral 7B first inference response - API output](https://raw.githubusercontent.com/arvind-platform-eng/paved-road-ai-eks/main/docs/screenshots/Mistral-first-response-json.png)
+![Mistral 7B first inference response - API output](https://raw.githubusercontent.com/arvind-platform-eng/paved-road-ai-eks/main/docs/Screenshots/Mistral-first-response-json.png)
 
 ---
 
@@ -35,7 +35,7 @@ I spent 3 nights debugging my way to a working deployment. This post is the refe
 
 **First successful inference: 2026-10-15, 19:56 IST. Mistral 7B explaining Kubernetes to a 10-year-old:**
 
-![Mistral first response in terminal](https://raw.githubusercontent.com/arvind-platform-eng/paved-road-ai-eks/main/docs/screenshots/12.Mistral-first-response.png)
+![Mistral first response in terminal](https://raw.githubusercontent.com/arvind-platform-eng/paved-road-ai-eks/main/docs/Screenshots/12.Mistral-first-response.png)
 
 > *"Kubernetes is like a magician's assistant, helping many toy robots (applications) to work together smoothly on a big playing field (data center or cloud), making sure they stay healthy and play nicely with each other."*
 
@@ -90,7 +90,7 @@ graph TB
 ```
 *The stack running — 2 system nodes + 1 Karpenter-provisioned GPU node:*
 
-![Cluster nodes Ready - 2 system + 1 GPU](https://raw.githubusercontent.com/arvind-platform-eng/paved-road-ai-eks/main/docs/screenshots/01-cluster-nodes-ready.png)
+![Cluster nodes Ready - 2 system + 1 GPU](https://raw.githubusercontent.com/arvind-platform-eng/paved-road-ai-eks/main/docs/Screenshots/01-cluster-nodes-ready.png)
 
 When no inference requests are coming in, Karpenter scales the GPU node to zero. The next request triggers a 3-5 minute cold start (node provisioning + model download), but idle cost drops to pennies per day instead of ₹115 per month for always-on.
 
@@ -175,9 +175,9 @@ Container started, model weights downloaded fine, then crashed with: *"TypeError
 
 *After all six gotchas resolved, vLLM boots cleanly and the API server comes up:*
 
-![vLLM Uvicorn running - API server ready](https://raw.githubusercontent.com/arvind-platform-eng/paved-road-ai-eks/main/docs/screenshots/11.Mistral7b-uvicorn-running.png)
+![vLLM Uvicorn running - API server ready](https://raw.githubusercontent.com/arvind-platform-eng/paved-road-ai-eks/main/docs/Screenshots/11.Mistral7b-uvicorn-running.png)
 
-![All pods running across all namespaces](https://raw.githubusercontent.com/arvind-platform-eng/paved-road-ai-eks/main/docs/screenshots/02-all-pods-running.png)
+![All pods running across all namespaces](https://raw.githubusercontent.com/arvind-platform-eng/paved-road-ai-eks/main/docs/Screenshots/02-all-pods-running.png)
 
 ---
 
@@ -207,7 +207,7 @@ The kube-prometheus-stack chart ships Prometheus, Grafana, Alertmanager, and nod
 
 *The DCGM-powered Grafana dashboard capturing GPU state during inference:*
 
-![Grafana GPU dashboard - node compute metrics](https://raw.githubusercontent.com/arvind-platform-eng/paved-road-ai-eks/main/docs/screenshots/10.Mistral-grafana-dashboard.png)
+![Grafana GPU dashboard - node compute metrics](https://raw.githubusercontent.com/arvind-platform-eng/paved-road-ai-eks/main/docs/Screenshots/10.Mistral-grafana-dashboard.png)
 
 Three dashboards worth importing immediately:
 - **12239** — NVIDIA DCGM Exporter Dashboard (GPU utilization, memory, temperature)
